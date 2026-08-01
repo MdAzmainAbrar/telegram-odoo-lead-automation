@@ -1,0 +1,10 @@
+# Secrets — never commit these
+.env
+
+# Docker volumes if you ever bind-mount data locally
+odoo-addons/
+*.log
+
+# OS/editor clutter
+.DS_Store
+*.swp
