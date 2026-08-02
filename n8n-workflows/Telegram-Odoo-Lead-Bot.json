@@ -1,0 +1,276 @@
+{
+  "name": "Telegram-Odoo-Lead-Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        -96,
+        -160
+      ],
+      "id": "790f2f71-3a21-41e3-8957-a317331afea4",
+      "name": "Telegram Trigger",
+      "webhookId": "00cdc0a4-9610-4ac1-bf09-dc883a81cb78",
+      "credentials": {
+        "telegramApi": {
+          "id": "YVQGkbWvzPrFp0y2",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ollama:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        176,
+        -160
+      ],
+      "id": "9ef4644b-b429-4b2d-98c4-e1cfc18745cd",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        80
+      ],
+      "id": "525087f8-0ab7-4710-b67b-a488db3b510f",
+      "name": "Send a text message",
+      "webhookId": "3ac2e967-ace8-4464-83fd-799b95151037",
+      "credentials": {
+        "telegramApi": {
+          "id": "YVQGkbWvzPrFp0y2",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawContent = $input.item.json.message.content;\nlet parsed;\n\ntry {\n  parsed = JSON.parse(rawContent);\n} catch (error) {\n  // Fallback if Ollama returns invalid JSON\n  parsed = {\n    reply: \"Thank you for your message. We are having a temporary technical issue. A team member will review your request.\",\n    lead_ready: false,\n    human_handoff: true,\n    handoff_reason: \"invalid_ai_json\",\n    lead_score: 0,\n    lead: {}\n  };\n}\n\nreturn {\n  json: parsed\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        -160
+      ],
+      "id": "f18cd532-fbfb-4449-8adb-41b7c39a8ae6",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO conversations (chat_id, role, content) VALUES \n({{ $('Telegram Trigger').item.json.message.chat.id }}, 'user', '{{ $('Telegram Trigger').item.json.message.text.replace(/'/g, \"''\") }}'),\n({{ $('Telegram Trigger').item.json.message.chat.id }}, 'assistant', '{{ $('Code in JavaScript').item.json.reply.replace(/'/g, \"''\") }}');",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        416,
+        80
+      ],
+      "id": "1b886d8f-8f56-4530-a6a8-c864d9529499",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "V1mVV1D6TMULdG9z",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://odoo:8069/jsonrpc",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"jsonrpc\": \"2.0\",\n  \"method\": \"call\",\n  \"params\": {\n    \"service\": \"common\",\n    \"method\": \"authenticate\",\n    \"args\": [\"odoo_crm\", \"YOUR_ODOO_EMAIL\", \"YOUR_ODOO_PASSWORD\", {}]\n  },\n  \"id\": 1\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        608,
+        80
+      ],
+      "id": "81928320-a73b-447a-b339-4613e84884c6",
+      "name": "Odoo Authenticate"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://odoo:8069/jsonrpc",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"jsonrpc\": \"2.0\",\n  \"method\": \"call\",\n  \"params\": {\n    \"service\": \"object\",\n    \"method\": \"execute_kw\",\n    \"args\": [\n      \"odoo_crm\",\n      2,\n      \"YOUR_ODOO_PASSWORD\",\n      \"crm.lead\",\n      \"create\",\n      [{\n        \"name\": \"Telegram Lead - {{ $('Telegram Trigger').item.json.message.chat.id }}\",\n        \"contact_name\": \"{{ $('Code in JavaScript').item.json.lead.name }}\",\n        \"phone\": \"{{ $('Code in JavaScript').item.json.lead.phone }}\",\n        \"email_from\": \"{{ $('Code in JavaScript').item.json.lead.email }}\",\n        \"partner_name\": \"{{ $('Code in JavaScript').item.json.lead.company }}\",\n        \"description\": \"Product interest: {{ $('Code in JavaScript').item.json.lead.product_interest }}\\nRequirement: {{ $('Code in JavaScript').item.json.lead.requirement }}\\nBudget: {{ $('Code in JavaScript').item.json.lead.budget }}\\nTimeline: {{ $('Code in JavaScript').item.json.lead.timeline }}\\nLocation: {{ $('Code in JavaScript').item.json.lead.location }}\",\n        \"source_id\": false\n      }]\n    ]\n  },\n  \"id\": 2\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        800,
+        80
+      ],
+      "id": "44d00de7-eaef-4216-843c-df03814c70ae",
+      "name": "Odoo Create Lead"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT role, content FROM conversations \nWHERE chat_id = {{ $('Telegram Trigger').item.json.message.chat.id }} \nORDER BY created_at ASC LIMIT 10;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        -96,
+        48
+      ],
+      "id": "7009bde4-cb23-4ef0-8bcd-89a674093818",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "postgres": {
+          "id": "V1mVV1D6TMULdG9z",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const history = $input.all().map(item => ({\n  role: item.json.role,\n  content: item.json.content\n}));\n\nconst systemPrompt = \"You are a WhatsApp/Telegram business assistant for a company. CRITICAL: Detect the language of the customer's CURRENT message and reply in that exact same language every time - if they write in English, reply in English; if Bangla, reply in Bangla. Do not switch languages mid-conversation. Be polite, short, professional. Ask only one or two questions at a time. NEVER ask for information the customer has already provided in this conversation - check the conversation history carefully first. Never invent prices, features, policies, or delivery dates. Collect: customer name, phone number, company name, product/service interest, requirement, location, budget, timeline, email, preferred contact time. You MUST respond with ONLY valid JSON, no other text, in exactly this format: {\\\"reply\\\": \\\"...\\\", \\\"lead_ready\\\": false, \\\"human_handoff\\\": false, \\\"handoff_reason\\\": \\\"\\\", \\\"lead_score\\\": 0, \\\"lead\\\": {\\\"name\\\": \\\"\\\", \\\"phone\\\": \\\"\\\", \\\"email\\\": \\\"\\\", \\\"company\\\": \\\"\\\", \\\"product_interest\\\": \\\"\\\", \\\"requirement\\\": \\\"\\\", \\\"budget\\\": \\\"\\\", \\\"timeline\\\": \\\"\\\", \\\"location\\\": \\\"\\\", \\\"preferred_contact_time\\\": \\\"\\\", \\\"notes\\\": \\\"\\\"}}. Set lead_ready true only when phone, name, product interest, and requirement are known. Set human_handoff true if customer asks for a human, complains, wants final pricing, or you don't know the answer.\";\n\nconst userMessage = $('Telegram Trigger').item.json.message.text;\n\nreturn {\n  json: {\n    model: \"gemma3:4b\",\n    messages: [\n      { role: \"system\", content: systemPrompt },\n      ...history,\n      { role: \"user\", content: userMessage }\n    ],\n    stream: false,\n    format: \"json\"\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        48
+      ],
+      "id": "7e4e6765-58f9-4c7c-9586-3b7daf8049a9",
+      "name": "Code in JavaScript1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a text message": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Odoo Authenticate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Odoo Authenticate": {
+      "main": [
+        [
+          {
+            "node": "Odoo Create Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "ddb4add6-8770-46fd-8f31-57759358ec71",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "934008bffc929132db237afb7ff4d32d38660a693736d55756968a7760bc84a7"
+  },
+  "nodeGroups": [],
+  "id": "PXjNOz2Obm8IKGPM",
+  "tags": []
+}

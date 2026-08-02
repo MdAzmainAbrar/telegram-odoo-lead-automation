@@ -41,6 +41,7 @@ services:
       - DB_POSTGRESDB_USER=${POSTGRES_USER}
       - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
       - GENERIC_TIMEZONE=Asia/Dhaka
+      - WEBHOOK_URL=${WEBHOOK_URL}
     ports:
       - "5678:5678"
     volumes:
